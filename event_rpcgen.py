@@ -16,6 +16,7 @@
 
 import sys
 import re
+import logging
 
 _NAME = "event_rpcgen.py"
 _VERSION = "0.1"
@@ -48,7 +49,7 @@ class Struct:
         self._name = name
         self._entries = []
         self._tags = {}
-        print '  Created struct: %s' % name
+        logging.info('  Created struct: %s' % name)
 
     def AddEntry(self, entry):
         if self._tags.has_key(entry.Tag()):
@@ -58,7 +59,7 @@ class Struct:
                                     self._tags[entry.Tag()], line_count))
         self._entries.append(entry)
         self._tags[entry.Tag()] = entry.Name()
-        print '    Added entry: %s' % entry.Name()
+        logging.info('    Added entry: %s' % entry.Name())
 
     def Name(self):
         return self._name
@@ -1669,13 +1670,13 @@ class CommandLine:
         impl_file = self.impl_file
         factory = self.factory
 
-        print 'Reading \"%s\"' % filename
+        logging.info('Reading \"%s\"' % filename)
 
         fp = open(filename, 'r')
         entities = Parse(factory, fp)
         fp.close()
 
-        print '... creating "%s"' % header_file
+        logging.info('... creating "%s"' % header_file)
         header_fp = open(header_file, 'w')
         print >>header_fp, factory.HeaderPreamble(filename)
 
@@ -1691,28 +1692,52 @@ class CommandLine:
         print >>header_fp, factory.HeaderPostamble(filename)
         header_fp.close()
 
-        print '... creating "%s"' % impl_file
+        logging.info('... creating "%s"' % impl_file)
         impl_fp = open(impl_file, 'w')
         print >>impl_fp, factory.BodyPreamble(filename, header_file)
         for entry in entities:
             entry.PrintCode(impl_fp)
         impl_fp.close()
 
+class ErrorFilter(logging.Filter):
+    def filter(self, rec):
+        return rec.levelno == logging.ERROR
+
+class NonErrorFilter(logging.Filter):
+    def filter(self, rec):
+        return rec.levelno != logging.ERROR
+
 if __name__ == '__main__':
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+
+    info_ch = logging.StreamHandler(stream=sys.stdout)
+    info_ch.setLevel(logging.INFO)
+    info_ch.setFormatter(logging.Formatter("%(message)s"))
+    info_ch.addFilter(NonErrorFilter())
+
+    err_ch = logging.StreamHandler()
+    err_ch.setLevel(logging.ERROR)
+    err_ch.setFormatter(logging.Formatter("ERROR: %(message)s"))
+    err_ch.addFilter(ErrorFilter())
+
+    logger.addHandler(info_ch)
+    logger.addHandler(err_ch)
+
     try:
         CommandLine(sys.argv).run()
         sys.exit(0)
 
     except RpcGenError, e:
-        print >>sys.stderr, e
+        logging.error(e)
         sys.exit(1)
 
     except EnvironmentError, e:
         if e.filename and e.strerror:
-            print >>sys.stderr, "%s: %s" % (e.filename, e.strerror)
+            logging.error("%s: %s" % (e.filename, e.strerror))
             sys.exit(1)
         elif e.strerror:
-            print >> sys.stderr, e.strerror
+            logging.error(e.strerror)
             sys.exit(1)
         else:
             raise
